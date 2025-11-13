@@ -3,10 +3,10 @@ FROM node:18-alpine
 WORKDIR /app
 
 COPY package.json package-lock.json* /app/
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 COPY . /app
+RUN npm run build
 
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
-
+CMD ["npm", "run", "start"]
