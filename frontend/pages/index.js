@@ -8,14 +8,14 @@ export default function Home() {
   const [data, setData] = useState(null);
   const [onlyAlive, setOnlyAlive] = useState(false);
 
-  const baseUrl = useMemo(() => process.env.NEXT_PUBLIC_API_URL || "http://localhost:4501", []);
+  const apiPath = "/api"; // proxied via Next.js rewrites to the API service
 
   useEffect(() => {
-    fetch(`${baseUrl}/health`)
+    fetch(`${apiPath}/health`)
       .then((r) => r.json())
       .then((d) => setApiStatus(d))
       .catch(() => setApiStatus({ ok: false }));
-  }, [baseUrl]);
+  }, []);
 
   const handleScan = async (e) => {
     e.preventDefault();
@@ -27,7 +27,7 @@ export default function Home() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${baseUrl}/scan?domain=${encodeURIComponent(d)}`);
+      const res = await fetch(`${apiPath}/scan?domain=${encodeURIComponent(d)}`);
       if (!res.ok) {
         const msg = await res.json().catch(() => ({}));
         throw new Error(msg?.detail || `Scan failed (${res.status})`);
