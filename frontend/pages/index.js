@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 export default function Home() {
   const [apiStatus, setApiStatus] = useState(null);
+  const [healthInfo, setHealthInfo] = useState({ status: "unknown", error: null, latencyMs: null, endpoint: "/api/health", checkedAt: null, open: false });
   const [domain, setDomain] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -11,10 +12,27 @@ export default function Home() {
   const apiPath = "/api"; // proxied via Next.js rewrites to the API service
 
   useEffect(() => {
-    fetch(`${apiPath}/health`)
-      .then((r) => r.json())
-      .then((d) => setApiStatus(d))
-      .catch(() => setApiStatus({ ok: false }));
+    const checkHealth = async () => {
+      const endpoint = `${apiPath}/health`;
+      const started = Date.now();
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 7000);
+        const res = await fetch(endpoint, { signal: ctrl.signal });
+        clearTimeout(t);
+        const latencyMs = Date.now() - started;
+        let body = null;
+        try { body = await res.json(); } catch {}
+        const ok = res.ok && body && body.ok === true;
+        setApiStatus(body || { ok: false });
+        setHealthInfo({ status: ok ? "online" : "offline", error: ok ? null : `HTTP ${res.status}`, latencyMs, endpoint, checkedAt: new Date().toISOString(), open: false });
+      } catch (err) {
+        const latencyMs = Date.now() - started;
+        setApiStatus({ ok: false });
+        setHealthInfo({ status: "offline", error: err.name === "AbortError" ? "Timeout" : (err.message || "Network error"), latencyMs, endpoint, checkedAt: new Date().toISOString(), open: false });
+      }
+    };
+    checkHealth();
   }, []);
 
   const handleScan = async (e) => {
@@ -52,9 +70,47 @@ export default function Home() {
       <header style={styles.header}>
         <div style={styles.brand}>reNgine Recon</div>
         <div style={styles.health}>
-          <span style={{ ...styles.badge, background: apiStatus?.ok ? "#16a34a" : "#dc2626" }}>
+          <button
+            onClick={() => setHealthInfo((h) => ({ ...h, open: !h.open }))}
+            title={healthInfo.status === "online" ? "API reachable" : "API unreachable"}
+            style={{ ...styles.badgeButton, background: apiStatus?.ok ? "#16a34a" : "#dc2626" }}
+          >
             API {apiStatus?.ok ? "Online" : "Offline"}
-          </span>
+          </button>
+          {healthInfo.open && (
+            <div style={styles.healthPanel}>
+              <div><strong>Endpoint:</strong> {healthInfo.endpoint}</div>
+              <div><strong>Checked:</strong> {healthInfo.checkedAt || "—"}</div>
+              <div><strong>Latency:</strong> {healthInfo.latencyMs != null ? `${healthInfo.latencyMs} ms` : "—"}</div>
+              <div><strong>Error:</strong> {healthInfo.error || "none"}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button style={styles.smallButton} onClick={() => {
+                  // re-run health check
+                  (async () => {
+                    const endpoint = `${apiPath}/health`;
+                    const started = Date.now();
+                    try {
+                      const ctrl = new AbortController();
+                      const t = setTimeout(() => ctrl.abort(), 7000);
+                      const res = await fetch(endpoint, { signal: ctrl.signal });
+                      clearTimeout(t);
+                      const latencyMs = Date.now() - started;
+                      let body = null;
+                      try { body = await res.json(); } catch {}
+                      const ok = res.ok && body && body.ok === true;
+                      setApiStatus(body || { ok: false });
+                      setHealthInfo((h) => ({ ...h, status: ok ? "online" : "offline", error: ok ? null : `HTTP ${res.status}`, latencyMs, checkedAt: new Date().toISOString() }));
+                    } catch (err) {
+                      const latencyMs = Date.now() - started;
+                      setApiStatus({ ok: false });
+                      setHealthInfo((h) => ({ ...h, status: "offline", error: err.name === "AbortError" ? "Timeout" : (err.message || "Network error"), latencyMs, checkedAt: new Date().toISOString() }));
+                    }
+                  })();
+                }}>Recheck</button>
+                <a href={healthInfo.endpoint} target="_blank" rel="noreferrer" style={styles.smallLink}>Open health</a>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -151,6 +207,7 @@ const styles = {
   brand: { fontWeight: 600, letterSpacing: 0.5 },
   health: {},
   badge: { display: "inline-block", padding: "4px 8px", borderRadius: 6, fontSize: 12, color: "#fff" },
+  badgeButton: { padding: "4px 8px", borderRadius: 6, fontSize: 12, color: "#fff", border: "none", cursor: "pointer" },
   main: { maxWidth: 1000, margin: "0 auto", padding: 24 },
   card: { background: "#0f172a", border: "1px solid #1f2937", borderRadius: 12, padding: 20, marginBottom: 16 },
   h2: { margin: 0, marginBottom: 12, fontSize: 18 },
@@ -169,4 +226,7 @@ const styles = {
   tr: {},
   td: { padding: "10px 12px", borderBottom: "1px solid #1f2937" },
   link: { color: "#93c5fd", textDecoration: "none" },
+  smallButton: { background: "#374151", color: "#fff", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 12 },
+  smallLink: { color: "#93c5fd", textDecoration: "none", fontSize: 12 },
+  healthPanel: { position: "absolute", right: 24, top: 48, background: "#0f172a", border: "1px solid #1f2937", borderRadius: 8, padding: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.3)" },
 };
